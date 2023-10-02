@@ -10,6 +10,7 @@ Arguments:
 Options:
    -h, --help         Show this screen and exit.
    --to-xcb PATH      Generate XCB layout configuration.
+   --to-utf PATH     Generate pretty unicode-art of the layout.
    --reset-to-qwerty  Reset config file to the QWERTY layout.
    --verbose          Raise verbosity level.
 """
@@ -17,10 +18,12 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 from dataclasses import dataclass
+from itertools import zip_longest
 
 debug: Callable[..., None]
 noop: Any = lambda *args, **kwargs: None
 MODIFIERS = ["Shift", "Mod1", "Mod2"]
+ROW_SIZES = [14, 14, 13, 12]
 
 
 def str_to_mods(string: str):
@@ -48,7 +51,7 @@ class Layout:
         while lines:
             mod = str_to_mods(lines.pop().strip())
             rows = [lines.pop().split() for _ in range(4)]
-            assert list(map(len, rows)) == [14, 14, 13, 12]
+            assert list(map(len, rows)) == ROW_SIZES
             characters[mod] = rows
         assert not any(rows is None for rows in characters[:2])
         for i, rows in enumerate(characters):
@@ -68,10 +71,49 @@ class Layout:
                 row_str = " ".join(char.rjust(2) if i else char.ljust(2) for i, char in enumerate(row[:-1]))
                 row_str += " " + row[-1].rjust(43 - len(row_str))
                 config.append("  " + row_str)
-        return "\n".join(config)
+        return "\n".join(config) + "\n"
+
+    def to_utf(self):
+        chars = self.characters
+        rows = []
+        for i, row_size in enumerate(ROW_SIZES):
+            edges = (0, row_size - 1)
+            for shift in reversed(range(2)):
+                row = []
+                for j in range(row_size):
+                    width = 5 + 2 * i * (j == 0) if j + 1 < row_size else 91 - 2 * i - 6 * row_size
+                    if chars[shift][i][j] == chars[2 + shift][i][j]:
+                        char = chars[shift][i][j]
+                    else:
+                        char = chars[shift][i][j] + " " + chars[2 + shift][i][j]
+                    row.append(
+                        char.center(width)
+                        if len(char) == 1 or j not in edges
+                        else char.rjust(min(width, len(char) + 1)).ljust(width)
+                        if j == 0
+                        else char.ljust(min(width, len(char) + 1)).rjust(width)
+                    )
+                    if not shift and rows and row[j] == rows[-1][j]:
+                        row[j] = " " * len(row[j])
+                rows.append(row)
+        last_row = [
+            *[" Ctrl ", " Fn ", " Super ", " Alt "],
+            " " * 13 + "Space" + " " * 13,
+            *[" Alt ", " Lang ", " Menu ", "  Ctrl "],
+        ]
+        rows.append(last_row)
+        rows.append([" " * len(x) for x in rows[-1]])
+        rows = ["│" + "│".join(row) + "│" for row in rows] + [""]
+        utf = ["┌" + "".join("─┬"[down == "│"] for down in rows[0][1:-1]) + "┐"]
+        for i in range(0, len(rows) - 1, 2):
+            row1, row2 = rows[i: i + 2]
+            row3 = ("─┴┬┼"[(up == "│") + 2 * (down == "│")] for up, down in zip_longest(row2[1:-1], rows[i + 2][1:-1]))
+            utf.extend([row1, row2])
+            utf.append("├└"[i + 3 == len(rows)] + "".join(row3) + "┤┘"[i + 3 == len(rows)])
+        return "\n".join(utf) + "\n"
 
     def __repr__(self):
-        config = "\n" + self.to_config() + "\n"
+        config = "\n" + self.to_config()
         return f"Layout.from_config({longquote(config)})"
 
 
@@ -100,6 +142,8 @@ def main(script_name: str, *script_args: str):
         layout_path.write_text(layout.to_config())
     else:
         layout = Layout.from_config(layout_path.read_text())
+    if path := args["--to-utf"]:
+        Path(path).write_text(layout.to_utf())
     if target := args["--to-xcb"]:
         print(target)
     else:
