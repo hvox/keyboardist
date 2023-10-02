@@ -9,15 +9,69 @@ Arguments:
 
 Options:
    -h, --help         Show this screen and exit.
+   --to-xcb PATH      Generate XCB layout configuration.
    --verbose          Raise verbosity level.
 """
 import sys
 from pathlib import Path
 from typing import Any, Callable
+from dataclasses import dataclass
 
 debug: Callable[..., None]
 noop: Any = lambda *args, **kwargs: None
 MODIFIERS = ["Shift", "Mod1", "Mod2"]
+
+
+def str_to_mods(string: str):
+    if string == "No modifiers":
+        return 0
+    return sum(2 ** MODIFIERS.index(mod.strip()) for mod in string.split("&"))
+
+
+def mods_to_str(mods: int):
+    if mods == 0:
+        return "No modifiers"
+    return " & ".join(reversed([MODIFIERS[i] for i, x in enumerate(reversed(bin(mods)[2:])) if x == "1"]))
+
+
+@dataclass
+class Layout:
+    characters: list[list[list[str]]]
+
+    @staticmethod
+    def from_config(config: str):
+        lines = (line.strip() for line in config.split("\n"))
+        lines = [line for line in lines if line and not line.startswith("#")]
+        lines = list(reversed(lines))
+        characters = [None] * 8
+        while lines:
+            mod = str_to_mods(lines.pop().strip())
+            rows = [lines.pop().split() for _ in range(4)]
+            assert list(map(len, rows)) == [14, 14, 13, 12]
+            characters[mod] = rows
+        assert not any(rows is None for rows in characters[:2])
+        for i, rows in enumerate(characters):
+            characters[i] = rows or [list(row) for row in characters[i % 2]]
+        return Layout(characters)
+
+    def to_config(self):
+        modes = list(self.characters)
+        if modes[0:2] == modes[4:6] == modes[6:8]:
+            modes = modes[0:4]
+            if modes[0:2] == modes[2:4]:
+                modes = modes[0:2]
+        config = []
+        for i, rows in enumerate(modes):
+            config.extend([""] * (i > 0) + [mods_to_str(i)])
+            for i, row in enumerate(rows):
+                row_str = " ".join(char.rjust(2) if i else char.ljust(2) for i, char in enumerate(row[:-1]))
+                row_str += " " + row[-1].rjust(43 - len(row_str))
+                config.append("  " + row_str)
+        return "\n".join(config)
+
+    def __repr__(self):
+        config = "\n" + self.to_config() + "\n"
+        return f"Layout.from_config({longquote(config)})"
 
 
 def main(script_name: str, *script_args: str):
@@ -26,8 +80,16 @@ def main(script_name: str, *script_args: str):
     args = __import__("docopt").docopt(doc, script_args)
     debug = print if args["--verbose"] else noop
     debug(f"Running with arguments {dict(args)!r}")
-    layout = (Path(args["PATH"]).read_text())
-    print(layout)
+    layout = Layout.from_config(Path(args["PATH"]).read_text())
+    if target := args["--to-xcb"]:
+        print(target)
+    else:
+        print(layout.to_config())
+
+
+def longquote(string: str):
+    ESCAPING = {"\\": r"\\"}
+    return '"""' + "".join(ESCAPING.get(char, char) for char in string) + '"""'
 
 
 if __name__ == "__main__":
