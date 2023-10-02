@@ -10,6 +10,7 @@ Arguments:
 Options:
    -h, --help         Show this screen and exit.
    --to-xcb PATH      Generate XCB layout configuration.
+   --reset-to-qwerty  Reset config file to the QWERTY layout.
    --verbose          Raise verbosity level.
 """
 import sys
@@ -80,7 +81,25 @@ def main(script_name: str, *script_args: str):
     args = __import__("docopt").docopt(doc, script_args)
     debug = print if args["--verbose"] else noop
     debug(f"Running with arguments {dict(args)!r}")
-    layout = Layout.from_config(Path(args["PATH"]).read_text())
+    layout_path = Path(args["PATH"])
+    if args["--reset-to-qwerty"]:
+        qwerty = """
+            No modifiers
+              `   1  2  3  4  5  6  7  8  9  0  -  =  Back
+              Tab  q  w  e  r  t  y  u  i  o  p  [  ]   \\
+              Caps  a  s  d  f  g  h  j  k  l  ;  '  Enter
+              Shift  z  x  c  v  b  n  m  ,  .  /    Shift
+
+            Shift
+              ~   !  @  #  $  %  ^  &  *  (  )  _  +  Back
+              Tab  Q  W  E  R  T  Y  U  I  O  P  {  }    |
+              Caps  A  S  D  F  G  H  J  K  L  :  "  Enter
+              Shift  Z  X  C  V  B  N  M  <  >  ?    Shift
+        """
+        layout = Layout.from_config(qwerty)
+        layout_path.write_text(layout.to_config())
+    else:
+        layout = Layout.from_config(layout_path.read_text())
     if target := args["--to-xcb"]:
         print(target)
     else:
