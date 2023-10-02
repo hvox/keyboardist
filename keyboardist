@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""
+Generate different keyboard things.
+
+Usage: {script} PATH [options]
+
+Arguments:
+    PATH           Path to layout config file.
+
+Options:
+   -h, --help         Show this screen and exit.
+   --verbose          Raise verbosity level.
+"""
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+debug: Callable[..., None]
+noop: Any = lambda *args, **kwargs: None
+MODIFIERS = ["Shift", "Mod1", "Mod2"]
+
+
+def main(script_name: str, *script_args: str):
+    global debug
+    doc = __doc__.format(script=Path(script_name).name)
+    args = __import__("docopt").docopt(doc, script_args)
+    debug = print if args["--verbose"] else noop
+    debug(f"Running with arguments {dict(args)!r}")
+    layout = (Path(args["PATH"]).read_text())
+    print(layout)
+
+
+if __name__ == "__main__":
+    main(*sys.argv)
